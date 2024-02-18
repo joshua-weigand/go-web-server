@@ -3,45 +3,79 @@ package main
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/gorilla/mux"
 )
 
-type Server struct {
-	port string
+type WebServer struct {
+	Port      string
+	BasePath  string
+	Endpoints map[string]RequestHandler
+}
+
+type WebServerBuilder struct {
+	port      string
+	basePath  string
+	endpoints map[string]RequestHandler
+}
+
+func (ws *WebServerBuilder) Port(port string) *WebServerBuilder {
+	ws.port = port
+	return ws
+}
+
+func (ws *WebServerBuilder) BasePath(basePath string) *WebServerBuilder {
+	ws.basePath = basePath
+	return ws
+}
+
+func (ws *WebServerBuilder) EndPoints(endpoints map[string]RequestHandler) *WebServerBuilder {
+	ws.endpoints = endpoints
+	return ws
+}
+
+func (ws *WebServerBuilder) Build() *WebServer {
+	return &WebServer{
+		Port:      ws.port,
+		BasePath:  ws.basePath,
+		Endpoints: ws.endpoints,
+	}
+}
+
+func (ws *WebServer) Run() {
+	var router = http.NewServeMux()
+
+	for k, _ := range ws.Endpoints {
+		var endpoint = ws.BasePath + k
+		router.HandleFunc(endpoint, genericErrorHandler(ws.genericHandler))
+		fmt.Println(endpoint)
+	}
+
+	var port = ":" + ws.Port
+
+	http.ListenAndServe(port, router)
+}
+
+func (wsb *WebServerBuilder) Run() {
+	var ws = wsb.Build()
+	ws.Run()
 }
 
 type ServerError struct {
 	Error string
 }
 
-type errorHandler func(http.ResponseWriter, *http.Request) error
+type RequestHandler func(http.ResponseWriter, *http.Request) error
 
-func httpHandler(handler errorHandler) http.HandlerFunc {
-	return func(writer http.ResponseWriter, reader *http.Request) {
-		if error := handler(writer, reader); error != nil {
+func genericErrorHandler(handler RequestHandler) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		if error := handler(response, request); error != nil {
 			fmt.Println("Error!!!")
 		}
 	}
 }
 
-func NewServer(port string) *Server {
-	return &Server{
-		port: port,
-	}
-}
-
-func (server *Server) Run() {
-	var router = mux.NewRouter()
-
-	router.HandleFunc("/", httpHandler(server.handleLogin))
-
-	http.ListenAndServe(server.port, router)
-}
-
-func (server *Server) handleLogin(writer http.ResponseWriter, reader *http.Request) error {
-	switch reader.Method {
-	case "GET":
+func (ws *WebServer) genericHandler(response http.ResponseWriter, request *http.Request) error {
+	switch request.Method {
+	case http.MethodGet:
 		fmt.Println("GET called!")
 	case "POST":
 		fmt.Println("POST called!")
